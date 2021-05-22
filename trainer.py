@@ -1,7 +1,7 @@
 import os
 import logging
 from tqdm import tqdm, trange
-
+import json
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
@@ -67,13 +67,17 @@ class Trainer(object):
         logger.info("  Save steps = %d", self.args.save_steps)
 
         global_step = 0
-        tr_loss = 0.0
+        tr_loss = []
+        dev_res = []
+        tr_res = []
+        test_res = []
         self.model.zero_grad()
 
         train_iterator = trange(int(self.args.num_train_epochs), desc="Epoch")
 
         for _ in train_iterator:
             epoch_iterator = tqdm(train_dataloader, desc="Iteration")
+            tr_loss_ep = 0.0
             for step, batch in enumerate(epoch_iterator):
                 self.model.train()
                 batch = tuple(t.to(self.device) for t in batch)  # GPU or CPU
@@ -92,7 +96,7 @@ class Trainer(object):
 
                 loss.backward()
 
-                tr_loss += loss.item()
+                tr_loss_ep += loss.item()
                 if (step + 1) % self.args.gradient_accumulation_steps == 0:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.args.max_grad_norm)
 
@@ -101,8 +105,8 @@ class Trainer(object):
                     self.model.zero_grad()
                     global_step += 1
 
-                    if self.args.logging_steps > 0 and global_step % self.args.logging_steps == 0:
-                        self.evaluate("dev")
+                    # if self.args.logging_steps > 0 and global_step % self.args.logging_steps == 0:
+                    #     self.evaluate("dev")
 
                     if self.args.save_steps > 0 and global_step % self.args.save_steps == 0:
                         self.save_model()
@@ -110,11 +114,21 @@ class Trainer(object):
                 if 0 < self.args.max_steps < global_step:
                     epoch_iterator.close()
                     break
+            
+            dev_res.append(self.evaluate("dev"))
+            test_res.append(self.evaluate("test"))
+            tr_res.append(self.evaluate("train"))
+            tr_loss.append(tr_loss_ep)
 
             if 0 < self.args.max_steps < global_step:
                 train_iterator.close()
                 break
-
+        with open('dev_res.json', 'w') as fout:
+            json.dump(dev_res, fout)
+        with open('test_res.json', 'w') as fout:
+            json.dump(test_res, fout)
+        with open('tr_res.json', 'w') as fout:
+            json.dump(tr_res, fout)
         return global_step, tr_loss / global_step
 
     def evaluate(self, mode):
@@ -122,6 +136,8 @@ class Trainer(object):
             dataset = self.test_dataset
         elif mode == 'dev':
             dataset = self.dev_dataset
+        elif mode == 'train':
+            dataset = self.train_dataset
         else:
             raise Exception("Only dev and test dataset available")
 
