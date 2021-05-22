@@ -72,7 +72,9 @@ class Trainer(object):
         tr_res = []
         test_res = []
         self.model.zero_grad()
-
+        dev_res.append(self.evaluate("dev"))
+        test_res.append(self.evaluate("test"))
+        tr_res.append(self.evaluate("train"))    
         train_iterator = trange(int(self.args.num_train_epochs), desc="Epoch")
 
         for _ in train_iterator:
